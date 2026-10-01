@@ -47,7 +47,7 @@ jobs:
       - name: Verify binary and signature
         run: |
           lipo -info "$OUT/Contents/MacOS/FileDialog"
-          lipo -verify_arch arm64 x86_64 "$OUT/Contents/MacOS/FileDialog"
+          lipo "$OUT/Contents/MacOS/FileDialog" -verify_arch arm64 x86_64
           nm -gU "$OUT/Contents/MacOS/FileDialog" | grep OpenFilePanel
           codesign --verify --verbose "$OUT"
 
