@@ -48,7 +48,9 @@ jobs:
         run: |
           lipo -info "$OUT/Contents/MacOS/FileDialog"
           lipo "$OUT/Contents/MacOS/FileDialog" -verify_arch arm64 x86_64
-          nm -gU "$OUT/Contents/MacOS/FileDialog" | grep OpenFilePanel
+          for symbol in DialogOpenFilePanel DialogOpenFilePanelAsync DialogOpenFolderPanel DialogOpenFolderPanelAsync DialogSaveFilePanel DialogSaveFilePanelAsync; do
+            nm -gU "$OUT/Contents/MacOS/FileDialog" | grep -qw "_$symbol" || { echo "Missing export: $symbol"; exit 1; }
+          done
           codesign --verify --verbose "$OUT"
 
       # Archive the bundle for download.
