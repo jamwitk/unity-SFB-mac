@@ -1,0 +1,85 @@
+name: Build macOS FileDialog Plugin
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Native/macOS/**'
+      - '.github/workflows/build-macos-plugin.yml'
+
+jobs:
+  build-macos-plugin:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      SRC: Native/macOS/FileDialog
+      OUT: build/FileDialog.bundle
+
+    steps:
+      # Fetch repository source.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Print toolchain versions for diagnostics.
+      - name: Print compiler versions
+        run: |
+          xcodebuild -version
+          clang --version
+
+      # Build a universal macOS bundle and place Info.plist.
+      - name: Build FileDialog bundle
+        run: |
+          mkdir -p "$OUT/Contents/MacOS"
+          clang++ -bundle -fobjc-arc -O2 -std=c++17 \
+            -arch arm64 -arch x86_64 \
+            -mmacosx-version-min=11.0 \
+            -framework Cocoa -framework UniformTypeIdentifiers \
+            "$SRC/FileDialog.mm" \
+            -o "$OUT/Contents/MacOS/FileDialog"
+          cp "$SRC/Info.plist" "$OUT/Contents/Info.plist"
+
+      # Apply ad-hoc signing to the bundle.
+      - name: Ad-hoc sign bundle
+        run: codesign --force --sign - "$OUT"
+
+      # Verify architecture, exported symbol, and signature.
+      - name: Verify binary and signature
+        run: |
+          lipo -info "$OUT/Contents/MacOS/FileDialog"
+          lipo -verify_arch arm64 x86_64 "$OUT/Contents/MacOS/FileDialog"
+          nm -gU "$OUT/Contents/MacOS/FileDialog" | grep OpenFilePanel
+          codesign --verify --verbose "$OUT"
+
+      # Archive the bundle for download.
+      - name: Zip bundle artifact
+        run: ditto -c -k --keepParent "$OUT" build/FileDialog.bundle.zip
+
+      # Upload the zip artifact.
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FileDialog-macOS-universal
+          path: build/FileDialog.bundle.zip
+          retention-days: 30
+
+      # Update tracked Unity plugin bundle on pushes to main.
+      - name: Sync bundle into Assets and push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          rm -rf Assets/Plugins/macOS/FileDialog.bundle
+          mkdir -p Assets/Plugins/macOS
+          cp -R "$OUT" Assets/Plugins/macOS/FileDialog.bundle
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A Assets/Plugins/macOS/FileDialog.bundle
+
+          if git diff --cached --quiet; then
+            echo "No plugin changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update macOS FileDialog plugin [skip ci]"
+          git push
